@@ -1,0 +1,10 @@
+#Byte-complie file
+__pycache__/
+model/__pucache__/
+
+
+##############
+.vscode
+atis_model
+snips_model
+sample_pred_out.txt
