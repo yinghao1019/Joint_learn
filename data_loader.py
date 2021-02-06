@@ -152,14 +152,14 @@ def convert_to_features(data,
 
         # pruncate seqLen
         special_token_counts = 2
-        if len(tokens) > (max_seqlen-special_token_counts):
-            tokens = tokens[:(max_seqlen-special_token_counts)]
-            slot_labels = tokens[:(max_seqlen-special_token_counts)]
+        if len(tokens) > (max_seqLen-special_token_counts):
+            tokens = tokens[:(max_seqLen-special_token_counts)]
+            slot_labels = tokens[:(max_seqLen-special_token_counts)]
 
         # add special token(SEP)
         tokens += [sep_token]
         slot_labels += [pad_label_id]
-        token_type_ids = [sentsA_id]*len(tokens)
+        token_type_ids = [sentA_id]*len(tokens)
 
         # add cls token
         tokens = [cls_token]+tokens
@@ -191,7 +191,7 @@ def convert_to_features(data,
 
         if ex_id < 5:
             logger.info('****Display examples****')
-            logger.info('Uid:{}'.format())
+            logger.info('Uid:{}'.format(example.guid))
             logger.info('token_ids:{}'.format(token_ids))
             logger.info('token_type_ids:{}'.format(token_type_ids))
             logger.info('attn mask:{}'.format(attn_mask))
@@ -216,7 +216,7 @@ data_processers = {
 
 def load_and_cacheExampels(args, tokenizer, mode):
     # load processer
-    processer = data_processers[args.task](args0)
+    processer = data_processers[args.task](args)
 
     # build load and save cached file path
     cached_file_path = os.path.join(args.data_dir, args.task,
@@ -263,7 +263,7 @@ def load_and_cacheExampels(args, tokenizer, mode):
     intent_label_tensors = torch.tensor(
         [f.intent_label for f in features], dtype=torch.long)
 
-    dataset = TensorDataset(token_ids_tensors, token_type_ids_tensors,
-                            attn_mask_tensors, slot_label_tensors, intent_label_tensors)
+    dataset = TensorDataset(token_ids_tensors, attn_mask_tensors,
+                            token_type_ids_tensors, slot_label_tensors, intent_label_tensors)
 
     return dataset
