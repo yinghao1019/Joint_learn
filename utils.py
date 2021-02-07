@@ -1,6 +1,7 @@
 import os
 import logging
 import random
+import torch
 import numpy as np
 
 from transformers import BertConfig, BertTokenizer
@@ -66,19 +67,27 @@ def get_modelMetrics(slot_preds, intent_preds, slot_labels, intent_labels):
     metrics.update(get_sents_frame_acc(
         slot_preds, intent_preds, slot_labels, intent_labels))
     return metrics
+
+
 # set random seed
-
-
 def set_randomSeed(args):
     random.seed(args.random_seed)
     np.random.seed(args.random_seed)
     torch.random.manual_seed(args.random_seed)
     torch.cuda.manual_seed_all(args.random_seed)
 
+
 # set logger logging message
-
-
 def init_logger():
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
                         datefmt=r'%m/%d/%Y %H:%M:%S',
                         level=logging.INFO)
+
+
+# count Model params
+def count_modelParams(model):
+    total_params = sum([p.numel()
+                        for p in model.parameters() if p.requires_grad])
+    downModel_params = sum([sum(p for p in ch.parameters()) for n, ch in model.named_children()
+                            if 'bert' not in n])
+    return total_params, downModel_params
