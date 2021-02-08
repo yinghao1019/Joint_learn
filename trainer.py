@@ -171,16 +171,10 @@ class Trainer(object):
 
             # get preds and labels
             # 1.intent preds=[Bs,intent_label_nums]
-            intent_label = inputs['intent_labels'].detach()
-            intent_label_mask = intent_label != pad_label_id
             if intent_preds is not None:
-                intent_preds = torch.cat(
-                    (intent_preds, intent_logitics[intent_label_mask]), dim=0)
-                intent_label_ids = torch.cat(
-                    intent_label_ids, intent_label[intent_label_mask], dim=0)
+                intent_preds = torch.cat((intent_preds, intent_logitics), dim=0)
             else:
-                intent_preds = intent_logitics[intent_label_mask]
-                intent_label_ids = intent_label_ids[intent_label_mask]
+                intent_preds = intent_logitics
 
             # 2.slot_preds=[Bs,seqLen,slot_num_tags]
             slot_label = inputs['slot_labels'].detach()

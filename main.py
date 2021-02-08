@@ -90,3 +90,7 @@ if __name__ == '__main__':
                         help='Pad token for slot label(Noe contribute loss)')
     parser.add_argument('--ignore_index', type=int, default=1,
                         help='Specifies a target value that not contribute loss and gradient')
+    args = parser.parse_args()
+    args.model_name_or_path = MODEL_PATH[args.model_type]
+
+    main(args)
