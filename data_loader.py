@@ -64,7 +64,7 @@ class JointProcesser:
     def __init__(self, args):
         self.args = args
         self.intent_vocab = get_intent_labels(args)
-        self.slot_vocab = get_slot_labels(*args)
+        self.slot_vocab = get_slot_labels(args)
         self.input_text_file = 'seq.in'
         self.slot_labels_file = 'seq.out'
         self.intent_label_file = 'label'
@@ -243,9 +243,9 @@ def load_and_cacheExampels(args, tokenizer, mode):
             raise NameError('Mode args is not train,val,test!')
 
         # transform example to feature
-        pad_label_id = args.pad_label_id
+        pad_label_id = processer.slot_vocab.index(args.slot_pad_label)
         features = convert_to_features(
-            examples, args.max_seqLen, tokenizer, pad_label_id)
+            examples, args.max_seqLen, tokenizer,pad_label_id )
 
         # save to cached file path
         torch.save(features, cached_file_path)

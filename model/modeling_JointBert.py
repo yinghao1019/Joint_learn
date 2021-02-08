@@ -60,10 +60,10 @@ class JointBert(BertPreTrainedModel):
                         -1, self.slot_num_labels)[active_mask]
                     active_labels = slot_labels.view(-1)[active_mask]
                     slot_loss = F.cross_entropy(
-                        active_logictics, active_labels)
+                        active_logictics, active_labels, ignore_index=self.args.ignore_idx)
                 else:
                     slot_loss = F.cross_entropy(
-                        slot_logitics.view(-1, self.slot_num_labels), slot_labels.view(-1))
+                        slot_logitics.view(-1, self.slot_num_labels), slot_labels.view(-1), ignore_index=self.args.ignore_idx)
             total_loss += self.args.slot_loss_coef*slot_loss
 
         outputs = ((intent_logticis, slot_logitics),)+outputs[2:]

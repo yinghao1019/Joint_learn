@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class Trainer(object):
-    def __init__(self, train_set, eval_set, test_set, args, device, pretrained_path=None):
+    def __init__(self, train_set, eval_set, test_set, args, pretrained_path=None):
         self.train_set = train_set
         self.val_set = eval_set
         self.test_set = test_set
@@ -23,13 +23,14 @@ class Trainer(object):
         self.args = args
         self.intent_vocab = get_intent_labels(args)
         self.slot_vocab = get_slot_labels(args)
-        self.device = device
+        self.device = torch.device('cuda:0') if torch.cuda.is_available(
+        ) and not args.no_cuda else torch.device('cpu')
 
-        self.pretrain_path = pretrained_path if pretrained_path is not None else MODEL_PATH[
+        self.pretrained_path = pretrained_path if pretrained_path is not None else MODEL_PATH[
             args.model_type]
         self.config, _, self.model = MODEL_CLASSES[args.model_type]
-        self.config = self.config.from_pretrained(self.pretrain_path)
-        self.model = self.model.from_pretrained(self.pretrain_path, self.config, args=args,
+        self.config = self.config.from_pretrained(self.pretrained_path)
+        self.model = self.model.from_pretrained(self.pretrained_path, self.config, args=args,
                                                 intent_num_labels=len(
                                                     self.intent_vocab),
                                                 slot_num_labels=len(self.slot_vocab), dropout_rate=self.args.dropout)
@@ -41,14 +42,13 @@ class Trainer(object):
         data_iter = DataLoader(self.train_set, self.args.bs, sampler)
 
         # compute train step
-        if self.args.max_step > 0:
-            t_toal = self.args.max_step
-            self.args.num_train_epochs = t_toal//(
+        if self.args.max_steps > 0:
+            t_total = self.args.max_steps
+            self.args.num_train_epochs = t_total//(
                 len(data_iter)//self.args.grad_accumulate_step)
         else:
             t_total = self.args.num_train_epochs * \
                 (len(data_iter)//self.args.grad_accumulate_step)
-
         # prepare lr scheduler and optimizer
         no_decay = ['LayerNorm', 'bias']
         param_gropus = [
@@ -58,9 +58,9 @@ class Trainer(object):
              'weight_decay':0.0},
         ]
 
-        optimizer = AdamW(param_gropus, self.args.train_lr)
+        optimizer = AdamW(param_gropus, lr=self.args.train_lr)
         lr_scheduler = get_linear_schedule_with_warmup(
-            optimizer, self.args.warm_steps, t_toal)
+            optimizer, self.args.warm_steps, t_total)
 
         # build train_progress
         train_pgb = tqdm.trange(self.args.num_train_epochs, desc='EPOCHS')
@@ -76,7 +76,7 @@ class Trainer(object):
         logger.info(f'Batch size:{self.args.bs}')
         logger.info(f'trainable step:{t_total}')
         logger.info(
-            f'Gradient accunulate step:{self.args.grad_accumulate_step}')
+            f'Gradient accunulate step:{self.args.grad_accumulate_steps}')
         logger.info(f'logging step:{self.args.logging_steps}')
         logger.info(f'save step:{self.args.save_steps}')
 
@@ -103,15 +103,15 @@ class Trainer(object):
                 loss = outputs[0]
 
                 # using gradient accumulate
-                if self.args.grad_accumulate_step > 1:
-                    loss = loss/self.args.grad_accumulate_step
+                if self.args.grad_accumulate_steps > 1:
+                    loss = loss/self.args.grad_accumulate_steps
                 loss.backward()
                 total_loss += loss.item()
 
                 # update model
-                if global_steps % self.args.grad_accumulate_step == 0:
+                if global_steps % self.args.grad_accumulate_steps == 0:
                     torch.nn.utils.clip_grad_norm_(
-                        self.model_parameters(), self.max_norm)
+                        self.model.model_parameters(), self.args.max_norm)
                     optimizer.step()
                     lr_scheduler.step()
                     optimizer.zero_grad()
@@ -124,10 +124,10 @@ class Trainer(object):
                 if global_steps % self.args.save_steps == 0 and self.args.save_steps > 0:
                     self.save_model(optimizer, lr_scheduler, global_steps)
 
-                if 0 < self.args.max_step < global_steps:
+                if 0 < t_total < global_steps:
                     epochs_pgb.close()
                     break
-            if 0 < self.args.max_step < global_steps:
+            if 0 < t_total < global_steps:
                 train_pgb.close()
                 break
 
@@ -147,7 +147,7 @@ class Trainer(object):
         intent_label_ids = None
         slot_preds = None
         slot_label_ids = None
-        pad_label_id = self.args.pad_label_id
+        pad_label_id = self.slot_vocab.index(self.args.slot_pad_label)
         total_loss = 0
         self.model.eval()
         for batch in data_iter:
@@ -243,8 +243,8 @@ class Trainer(object):
 
     def save_model(self, optimizer, lr_scheduler, global_step):
         # comfirm model dir
-        if not os.path.isdir(self.args.save_model_dir):
-            os.mkdir(self.args.save_model_dir)
+        if not os.path.isdir(self.args.model_dir):
+            os.mkdir(self.args.model_dir)
         # prepare related Model info.
         optim_params = {
             'optimizer': optimizer.state_dict(),
@@ -252,9 +252,9 @@ class Trainer(object):
             'global_step': global_step,
         }
         args_savePath = os.path.join(
-            self.args.save_model_dir, 'train_args.bin')
+            self.args.model_dir, 'train_args.bin')
         optim_paramPath = os.path.join(
-            self.args.save_model_dir, 'optim_params.pt')
+            self.args.model_dir, 'optim_params.pt')
         # save Model
         try:
 
@@ -263,19 +263,19 @@ class Trainer(object):
             torch.save(self.args, args_savePath)
             # save model info
             torch.save(optim_params, optim_paramPath)
-            logger.info(f'Save Model to {self.args.save_model_dir} Success!')
+            logger.info(f'Save Model to {self.args.model_dir} Success!')
         except:
             logger.info('Save Model Fail')
 
     @ classmethod
-    def reload_model_(cls, model_dir, train_set, eval_set, test_set, device):
+    def reload_model_(cls, model_dir, train_set, eval_set, test_set):
         # check model dir whether exists
         if os.path.exists(model_dir):
             try:
                 args_path = os.path.join(model_dir, 'train_args.bin')
                 args = torch.load(args_path)
                 logger.info('****Reload Model success!****')
-                return cls(train_set, eval_set, test_set, args, device, pretrained_path=args.save_model_dir)
+                return cls(train_set, eval_set, test_set, args, pretrained_path=args.model_dir)
             except:
                 logger.info('Model some file was missed!')
         else:
