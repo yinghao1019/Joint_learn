@@ -14,7 +14,7 @@ def main(args):
     tokenizer = load_tokenizer(args)
     # load dataset
     train_set = load_and_cacheExampels(args, tokenizer, 'train')
-    val_set = load_and_cacheExampels(args, tokenizer, 'val')
+    val_set = load_and_cacheExampels(args, tokenizer, 'dev')
     test_set = load_and_cacheExampels(args, tokenizer, 'test')
 
     # build train proccess

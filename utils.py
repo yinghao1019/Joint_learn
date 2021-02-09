@@ -16,11 +16,11 @@ MODEL_PATH = {
 
 
 def get_intent_labels(args):
-    return [label.strip() for label in open(os.path.join(args.data_dir, args.task, args.intent_label_file, 'r', encoding='utf-8'))]
+    return [label.strip() for label in open(os.path.join(args.data_dir, args.task, args.intent_label_file), 'r', encoding='utf-8')]
 
 
 def get_slot_labels(args):
-    return [label.strip() for label in open(os.path.join(args.data_dir, args.task, args.slot_label_file, 'r', encoding='utf-8'))]
+    return [label.strip() for label in open(os.path.join(args.data_dir, args.task, args.slot_label_file), 'r', encoding='utf-8')]
 
 
 def load_tokenizer(args):

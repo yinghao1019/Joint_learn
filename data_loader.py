@@ -74,6 +74,7 @@ class JointProcesser:
         lines = []
         with open(file_path, 'r', encoding='utf-8') as f_r:
             for line in f_r:
+                line = line.strip()
                 lines.append(line)
         return lines
 
@@ -87,13 +88,22 @@ class JointProcesser:
             # convert slots to idx
             slot_idxes = []
             for s in slots.strip().split():
-                slot_idxes.append(self.slot_vocab.index(s))
+                # 1.get slot label index
+                if s in self.slot_vocab:
+                    slot_id = self.slot_vocab.index(s)
+                else:
+                    slot_id = self.slot_vocab.index('UNK')
+                slot_idxes.append(slot_id)
 
-            # asure token nums== slot labels num
+            # convert intent to idx
+            if intents in self.intent_vocab:
+                intent_idx = self.intent_vocab.index(intents)
+            else:
+                intent_idx = self.intent_vocab.index('UNK')
+
+            # assure token nums== slot labels num
             assert len(words) == len(
                 slot_idxes), "Input text length don't match slot labels"
-            # convert intent to idx
-            intent_idx = self.intent_vocab.index(intents)
             # add to examples
             examples.append(InputExamples(guid=uid, words=words,
                                           slot_labels=slot_idxes, intent_label=intent_idx))
@@ -111,7 +121,7 @@ class JointProcesser:
             intent_labels=self._read_file(
                 os.path.join(data_path, self.intent_label_file)),
             slot_labels=self._read_file(os.path.join(
-                data_path, self.intent_label_file)),
+                data_path, self.slot_labels_file)),
             set_type=mode)
 
 
@@ -154,7 +164,7 @@ def convert_to_features(data,
         special_token_counts = 2
         if len(tokens) > (max_seqLen-special_token_counts):
             tokens = tokens[:(max_seqLen-special_token_counts)]
-            slot_labels = tokens[:(max_seqLen-special_token_counts)]
+            slot_labels = slot_labels[:(max_seqLen-special_token_counts)]
 
         # add special token(SEP)
         tokens += [sep_token]
@@ -167,7 +177,7 @@ def convert_to_features(data,
         token_type_ids = [cls_token_segment_id]+token_type_ids
 
         # convert token to token ids
-        token_ids = tokenizer.convert_ids_to_tokens(tokens)
+        token_ids = tokenizer.convert_tokens_to_ids(tokens)
         # create mask attention
         attn_mask = [1 if with_padding_mask else 0]*len(token_ids)
 
@@ -235,7 +245,7 @@ def load_and_cacheExampels(args, tokenizer, mode):
         # create examples
         if mode == 'train':
             examples = processer.get_examples(mode)
-        elif mode == 'val':
+        elif mode == 'dev':
             examples = processer.get_examples(mode)
         elif mode == 'test':
             examples = processer.get_examples(mode)
@@ -243,14 +253,13 @@ def load_and_cacheExampels(args, tokenizer, mode):
             raise NameError('Mode args is not train,val,test!')
 
         # transform example to feature
-        pad_label_id = processer.slot_vocab.index(args.slot_pad_label)
+        pad_label_id = int(processer.slot_vocab.index(args.slot_pad_label))
         features = convert_to_features(
-            examples, args.max_seqLen, tokenizer,pad_label_id )
+            examples, args.max_seqLen, tokenizer, pad_label_id)
 
         # save to cached file path
         torch.save(features, cached_file_path)
         logger.info(f'Save features to {cached_file_path}')
-
     # transform features into tensor
     token_ids_tensors = torch.tensor(
         [f.input_tokenIds for f in features], dtype=torch.long)
