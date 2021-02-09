@@ -8,3 +8,4 @@ model/__pucache__/
 atis_model
 snips_model
 sample_pred_out.txt
+data/*.zip

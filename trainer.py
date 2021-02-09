@@ -30,10 +30,10 @@ class Trainer(object):
             args.model_type]
         self.config, _, self.model = MODEL_CLASSES[args.model_type]
         self.config = self.config.from_pretrained(self.pretrained_path)
-        self.model = self.model.from_pretrained(self.pretrained_path, self.config, args=args,
+        self.model = self.model.from_pretrained(self.pretrained_path, config=self.config, args=args,
                                                 intent_num_labels=len(
                                                     self.intent_vocab),
-                                                slot_num_labels=len(self.slot_vocab), dropout_rate=self.args.dropout)
+                                                slot_num_labels=len(self.slot_vocab))
         self.model.to(self.device)
 
     def train_model(self):
@@ -172,7 +172,8 @@ class Trainer(object):
             # get preds and labels
             # 1.intent preds=[Bs,intent_label_nums]
             if intent_preds is not None:
-                intent_preds = torch.cat((intent_preds, intent_logitics), dim=0)
+                intent_preds = torch.cat(
+                    (intent_preds, intent_logitics), dim=0)
             else:
                 intent_preds = intent_logitics
 

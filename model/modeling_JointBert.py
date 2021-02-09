@@ -7,7 +7,7 @@ from .module import intent_classifier, slot_classifier
 
 
 class JointBert(BertPreTrainedModel):
-    def __init__(self, config, args, intent_num_labels, slot_num_labels, dropout_rate):
+    def __init__(self, config, args, intent_num_labels, slot_num_labels):
         super(JointBert, self).__init__(config)
         self.intent_num_labels = intent_num_labels
         self.slot_num_labels = slot_num_labels
@@ -15,15 +15,14 @@ class JointBert(BertPreTrainedModel):
         self.config = config
 
         # create layer
-        self.bert = BertModel(config)
+        self.bert = BertModel(config=config)
         self.intent_classifier = intent_classifier(self.config.hidden_size,
-                                                   intent_num_labels, dropout_rate)
-        self.slot_classifier = slot_classifier(self.config.hiddeb_size,
-                                               slot_num_labels, dropout_rate)
+                                                   intent_num_labels, self.args.dropout)
+        self.slot_classifier = slot_classifier(self.config.hidden_size,
+                                               slot_num_labels, self.args.dropout)
         # build conditional random field
         if args.use_crf:
             self.crf_layer = CRF(slot_num_labels, batch_first=True)
-
         self.init_weights()
 
     def forward(self, input_ids, attention_mask, token_type_ids, slot_labels, intent_labels):
