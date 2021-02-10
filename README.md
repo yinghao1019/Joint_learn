@@ -6,7 +6,7 @@ Pytorch implementation of below Model
 ## Model Architecture  
   
 #### 1.JoinBert
-    * Architecture is referenced to [monologg/JointBERT](https://github.com/monologg/JointBERT).Please click to see detail.  
+Architecture is referenced to [monologg/JointBERT](https://github.com/monologg/JointBERT).Please click to see detail.   
     - Predict `intent` and `slot` at the same time from **one BERT model** (=Joint model)  
     - total_loss = intent_loss + coef \* slot_loss (Change coef with `--slot_loss_coef` option)  
     - **If you want to use CRF layer, give `--use_crf` option**  
