@@ -185,21 +185,20 @@ class Trainer(object):
             attn_mask = inputs['attention_mask']
             if slot_preds is not None:
                 if self.args.use_crf:
-                    slot_pred = self.model.crf_layer.decode(
-                        slot_logitics, attn_mask)
-                    slot_preds = torch.cat(
-                        (slot_preds, slot_pred), dim=0)
+                    slot_pred = np.array(
+                        self.model.crf_layer.decode(slot_logitics))
+                    slot_preds = np.concatenate(
+                        (slot_preds, slot_pred), axis=0)
                     slot_label_ids = torch.cat(
                         (slot_label_ids, slot_label), dim=0)
                 else:
-                    slot_preds = torch.cat(
-                        (slot_preds, slot_logitics), dim=0)
+                    slot_preds = torch.cat((slot_preds, slot_logitics), dim=0)
                     slot_label_ids = torch.cat(
                         (slot_label_ids, slot_label), dim=0)
             else:
                 if self.args.use_crf:
-                    slot_preds = self.model.crf_layer.decode(
-                        slot_logitics, attn_mask)
+                    slot_preds = np.array(
+                        self.model.crf_layer.decode(slot_logitics))
                     slot_label_ids = slot_label
                 else:
                     slot_preds = slot_logitics
