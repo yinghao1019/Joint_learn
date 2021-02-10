@@ -16,6 +16,7 @@ Architecture is referenced to [monologg/JointBERT](https://github.com/monologg/J
 ![](./images/Attn_seq2seq.png)
 
 **Using Attention mechanism based on RNN Encoder-Decoder.**  
+
     - Encoder part  
      1. Bidirectional Rnn(LSTM) to encode source sents.
      2. Backward Lstm final hidden state to compute deocder init hidden state.  
