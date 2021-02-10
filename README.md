@@ -13,14 +13,14 @@ Architecture is referenced to [monologg/JointBERT](https://github.com/monologg/J
   
 #### 2.AttnSeq2Seq  
   
-      ![](./images/Attn_seq2seq.png)
+![](./images/Attn_seq2seq.png)
 
     Using Attention mechanism based on RNN Encoder-Decoder.  
-    -Encoder part  
+    - Encoder part  
      1. Bidirectional Rnn(LSTM) to encode source sents.
      2. Backward Lstm final hidden state to compute deocder init hidden state.  
       
-    -Attenion part
+    - Attenion part
      1.Using neural network,last hidden state,encoder hiddens to compute  attention weight.
      2.using softmax to gain wieght  
      
