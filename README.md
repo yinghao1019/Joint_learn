@@ -1,7 +1,7 @@
 # Joint_learn  
 Pytorch implementation of below Model  
-   *`JointBert`:[BERT for Joint Intent Classification and Slot Filling](https://arxiv.org/abs/1902.10909)  
-   *`AttnSeq2Seq`:[Attention-Based Recurrent Neural Network Models for Joint Intent Detection and Slot Filling](https://arxiv.org/abs/1609.01454)  
+   * `JointBert`:[BERT for Joint Intent Classification and Slot Filling](https://arxiv.org/abs/1902.10909)  
+   * `AttnSeq2Seq`:[Attention-Based Recurrent Neural Network Models for Joint Intent Detection and Slot Filling](https://arxiv.org/abs/1609.01454)  
   
 ## Model Architecture  
   
@@ -13,7 +13,7 @@ Architecture is referenced to [monologg/JointBERT](https://github.com/monologg/J
   
 #### 2.AttnSeq2Seq  
   
-      ![]()
+      ![](./images/Attn_seq2seq.png)
 
     Using Attention mechanism based on RNN Encoder-Decoder.  
     -Encoder part  

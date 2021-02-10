@@ -10,3 +10,4 @@ snips_model
 sample_pred_out.txt
 data/atis/*.zip
 data/snips/*.zip
+images
