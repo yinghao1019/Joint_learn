@@ -117,7 +117,7 @@ def get_predict(model, Dataset, pred_config, args, device):
     model.eval()
     for batch in data_iter:
         # put data in cpu or gpu
-        batch = (b.to(device) for b in batch)
+        batch = tuple(b.to(device) for b in batch)
 
         inputs = {
             'input_ids': batch[0],

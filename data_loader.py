@@ -150,7 +150,7 @@ def convert_to_features(data,
         tokens = []
         slot_labels = []
         for word, slot in zip(example.words, example.slot_labels):
-            subwords = tokenizer.tokenize(word)
+            subwords = tokenizer.tokenize(word.lower())
             if not subwords:
                 subwords = [unk_token]
             tokens.extend(subwords)
@@ -183,10 +183,10 @@ def convert_to_features(data,
 
         # padding token
         pad_seqLen = max_seqLen-len(token_ids)
-        token_ids += [pad_token_id]*pad_seqLen
-        slot_labels += [pad_label_id]*pad_seqLen
-        token_type_ids += [pad_token_segment_id]*pad_seqLen
-        attn_mask += [0 if with_padding_mask else 1]*pad_seqLen
+        token_ids += ([pad_token_id]*pad_seqLen)
+        slot_labels += ([pad_label_id]*pad_seqLen)
+        token_type_ids += ([pad_token_segment_id]*pad_seqLen)
+        attn_mask += ([0 if with_padding_mask else 1]*pad_seqLen)
 
         assert len(token_ids) == max_seqLen, "Error tokenId len with {}vs{}".format(
             len(token_ids), max_seqLen)
@@ -239,7 +239,7 @@ def load_and_cacheExampels(args, tokenizer, mode):
 
     if os.path.isfile(cached_file_path):
         # load features
-        logger.info('loading data file from{}'.format(cached_file_path))
+        logger.info('loading data file from {}'.format(cached_file_path))
         features = torch.load(cached_file_path)
     else:
         # create examples
@@ -253,9 +253,9 @@ def load_and_cacheExampels(args, tokenizer, mode):
             raise NameError('Mode args is not train,val,test!')
 
         # transform example to feature
-        pad_label_id = int(processer.slot_vocab.index(args.slot_pad_label))
+        pad_label_id = args.ignore_index
         features = convert_to_features(
-            examples, args.max_seqLen, tokenizer, pad_label_id)
+            examples, args.max_seqLen, tokenizer, pad_label_id=pad_label_id)
 
         # save to cached file path
         torch.save(features, cached_file_path)

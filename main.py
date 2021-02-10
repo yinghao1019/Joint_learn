@@ -17,7 +17,6 @@ def main(args):
     val_set = load_and_cacheExampels(args, tokenizer, 'dev')
     test_set = load_and_cacheExampels(args, tokenizer, 'test')
     slot_vocab = get_slot_labels(args)
-    print(slot_vocab.index('PAD'))
     # build train proccess
     proccesser = Trainer(train_set, val_set, test_set, args)
 
