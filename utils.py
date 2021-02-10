@@ -44,13 +44,20 @@ def get_slot_metrics(preds, labels):
 
 def get_sents_frame_acc(slot_preds, intent_preds, slot_labels, intent_labels):
     # 1.get intent acc
-    intent_correct = intent_preds == intent_labels
+    intent_correct = (intent_preds == intent_labels)
     # 2.compute sents acc
     # confirm same shape
-    assert slot_preds.shape[0] == slot_labels.shape[0]
-    assert slot_preds.shape[1] == slot_labels.shape[1]
+    slot_correct = []
+    for slot,label in zip(slot_preds,slot_labels):
+        correct=True
+        for s,l in zip(slot,label):
+            if l!=s:
+                correct=False
+            break
+        slot_correct.append(correct)
+    slot_correct = np.array(slot_correct)
 
-    slot_correct = np.all(slot_preds == slot_labels, axis=1)
+    # compute semantic
     semantic_acc = np.multiply(intent_correct, slot_correct).mean()
 
     return {
@@ -88,6 +95,6 @@ def init_logger():
 def count_modelParams(model):
     total_params = sum([p.numel()
                         for p in model.parameters() if p.requires_grad])
-    downModel_params = sum([sum(p for p in ch.parameters()) for n, ch in model.named_children()
-                            if 'bert' not in n])
-    return total_params, downModel_params
+    # downModel_params = sum([sum([p for p in ch.parameters()]) for n, ch in model.named_children()
+    #                         if 'bert' not in n])
+    return total_params

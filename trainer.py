@@ -29,7 +29,8 @@ class Trainer(object):
         self.pretrained_path = pretrained_path if pretrained_path is not None else MODEL_PATH[
             args.model_type]
         self.config, _, self.model = MODEL_CLASSES[args.model_type]
-        self.config = self.config.from_pretrained(self.pretrained_path)
+        self.config = self.config.from_pretrained(
+            self.pretrained_path, finetuning_task=args.task)
         self.model = self.model.from_pretrained(self.pretrained_path, config=self.config, args=args,
                                                 intent_num_labels=len(
                                                     self.intent_vocab),
@@ -45,10 +46,10 @@ class Trainer(object):
         if self.args.max_steps > 0:
             t_total = self.args.max_steps
             self.args.num_train_epochs = t_total//(
-                len(data_iter)//self.args.grad_accumulate_step)
+                len(data_iter)//self.args.grad_accumulate_steps)
         else:
             t_total = self.args.num_train_epochs * \
-                (len(data_iter)//self.args.grad_accumulate_step)
+                (len(data_iter)//self.args.grad_accumulate_steps)
         # prepare lr scheduler and optimizer
         no_decay = ['LayerNorm', 'bias']
         param_gropus = [
@@ -58,7 +59,8 @@ class Trainer(object):
              'weight_decay':0.0},
         ]
 
-        optimizer = AdamW(param_gropus, lr=self.args.train_lr)
+        optimizer = AdamW(param_gropus, lr=self.args.train_lr,
+                          eps=self.args.adam_epsilon)
         lr_scheduler = get_linear_schedule_with_warmup(
             optimizer, self.args.warm_steps, t_total)
 
@@ -68,7 +70,7 @@ class Trainer(object):
         total_loss = 0
 
         # count params
-        total_params, dowm_params = count_modelParams(self.model)
+        total_params = count_modelParams(self.model)
         # Train!
         logger.info('****Start Training!****')
         logger.info(f'Model trainable params:{total_params}')
@@ -76,25 +78,25 @@ class Trainer(object):
         logger.info(f'Batch size:{self.args.bs}')
         logger.info(f'trainable step:{t_total}')
         logger.info(
-            f'Gradient accunulate step:{self.args.grad_accumulate_steps}')
-        logger.info(f'logging step:{self.args.logging_steps}')
-        logger.info(f'save step:{self.args.save_steps}')
+            f'gradient accumulate steps:{self.args.grad_accumulate_steps}')
+        logger.info(f'logging steps:{self.args.logging_steps}')
+        logger.info(f'save steps:{self.args.save_steps}')
 
         self.model.zero_grad()
         for _ in train_pgb:
             epochs_pgb = tqdm.tqdm(data_iter, desc='iteration')
             for step, batch in enumerate(epochs_pgb):
                 self.model.train()
-
+                global_steps += 1
                 # load batch_data
-                batch = (t.to(self.device)
-                         for t in batch)  # put tensor to gpu or cpu
+                batch = tuple(t.to(self.device)
+                              for t in batch)  # put tensor to gpu or cpu
 
                 # create inputs
                 inputs = {
                     'input_ids': batch[0],
                     'attention_mask': batch[1],
-                    'token_typ_ids': batch[2],
+                    'token_type_ids': batch[2],
                     'slot_labels': batch[3],
                     'intent_labels': batch[4]
                 }
@@ -111,17 +113,16 @@ class Trainer(object):
                 # update model
                 if global_steps % self.args.grad_accumulate_steps == 0:
                     torch.nn.utils.clip_grad_norm_(
-                        self.model.model_parameters(), self.args.max_norm)
+                        self.model.parameters(), self.args.max_norm)
                     optimizer.step()
                     lr_scheduler.step()
                     optimizer.zero_grad()
-                    global_steps += 1
 
                 # evaluate_model
-                if global_steps % self.args.logging_steps == 0 and self.args.logging_steps > 0:
+                if (global_steps % self.args.logging_steps == 0) and (self.args.logging_steps > 0):
                     self.evaluate('eval')
 
-                if global_steps % self.args.save_steps == 0 and self.args.save_steps > 0:
+                if (global_steps % self.args.save_steps == 0) and (self.args.save_steps > 0):
                     self.save_model(optimizer, lr_scheduler, global_steps)
 
                 if 0 < t_total < global_steps:
@@ -147,73 +148,76 @@ class Trainer(object):
         intent_label_ids = None
         slot_preds = None
         slot_label_ids = None
-        pad_label_id = self.slot_vocab.index(self.args.slot_pad_label)
+        pad_label_id = self.args.ignore_index
         total_loss = 0
+
+        self.model.zero_grad()
         self.model.eval()
         for batch in data_iter:
+            batch = tuple(b.to(self.device) for b in batch)
+            with torch.no_grad():
+                # create inputs
+                inputs = {
+                    'input_ids': batch[0],
+                    'attention_mask': batch[1],
+                    'token_type_ids': batch[2],
+                    'slot_labels': batch[3],
+                    'intent_labels': batch[4], }
 
-            batch = (b.to(self.device) for b in batch)
-
-            # create inputs
-            inputs = {
-                'input_ids': batch[0],
-                'attention_mask': batch[1],
-                'token_typ_ids': batch[2],
-                'slot_labels': batch[3],
-                'intent_labels': batch[4],
-            }
-
-            # forward pass
-            outputs = self.model(**inputs)
-
-            loss, (intent_logitics, slot_logitics) = outputs[:2]
-            total_loss += loss.item()
-
+                # forward pass
+                outputs = self.model(**inputs)
+                loss, (intent_logitics, slot_logitics) = outputs[:2]
+                total_loss += loss.item()
             # get preds and labels
             # 1.intent preds=[Bs,intent_label_nums]
+            intent_labels = inputs['intent_labels'].detach()
             if intent_preds is not None:
                 intent_preds = torch.cat(
                     (intent_preds, intent_logitics), dim=0)
+                intent_label_ids = torch.cat(
+                    (intent_label_ids, intent_labels), dim=0)
             else:
                 intent_preds = intent_logitics
+                intent_label_ids = intent_labels
 
             # 2.slot_preds=[Bs,seqLen,slot_num_tags]
             slot_label = inputs['slot_labels'].detach()
-            slot_label_mask = slot_label != pad_label_id
             attn_mask = inputs['attention_mask']
             if slot_preds is not None:
                 if self.args.use_crf:
                     slot_pred = self.model.crf_layer.decode(
                         slot_logitics, attn_mask)
                     slot_preds = torch.cat(
-                        (slot_preds, slot_pred[slot_label_mask]), dim=0)
+                        (slot_preds, slot_pred), dim=0)
                     slot_label_ids = torch.cat(
-                        (slot_label_ids, slot_label[attn_mask]), dim=0)
+                        (slot_label_ids, slot_label), dim=0)
                 else:
                     slot_preds = torch.cat(
-                        (slot_preds, slot_logitics[slot_label_mask]), dim=0)
+                        (slot_preds, slot_logitics), dim=0)
                     slot_label_ids = torch.cat(
-                        (slot_label_ids, slot_label[slot_label_mask]), dim=0)
+                        (slot_label_ids, slot_label), dim=0)
             else:
                 if self.args.use_crf:
                     slot_preds = self.model.crf_layer.decode(
-                        slot_logitics, attn_mask)[slot_label_mask]
-                    slot_label_ids = slot_label[slot_label_mask]
+                        slot_logitics, attn_mask)
+                    slot_label_ids = slot_label
                 else:
-                    slot_preds = slot_logitics[slot_label_mask]
-                    slot_label_ids = slot_label[slot_label_mask]
+                    slot_preds = slot_logitics
+                    slot_label_ids = slot_label
 
         # compute model metrics
         eval_loss = total_loss/len(data_iter)
         metrics = {'eval_loss': eval_loss, }
-
         # intent_preds=[Bs,]
         intent_preds = torch.argmax(
             F.softmax(intent_preds, dim=1), dim=1).cpu().numpy()
         intent_label_ids = intent_label_ids.cpu().numpy()
         # slot preds=[Bs,seqLen]
+        # filter slot label pad token
         if not self.args.use_crf:
-            slot_preds = torch.argmax(F.softmax(intent_preds, dim=2), dim=2)
+            slot_preds = torch.argmax(
+                F.softmax(slot_preds, dim=2), dim=2).cpu().numpy()
+        slot_label_ids = slot_label_ids.cpu().numpy()
 
         slot_label_map = {idx: s for idx, s in enumerate(self.slot_vocab)}
         slot_preds_list = [[] for _ in range(slot_label_ids.shape[0])]
@@ -222,15 +226,18 @@ class Trainer(object):
         # convert slot idx to labels
         for i in range(slot_label_ids.shape[0]):
             for j in range(slot_label_ids.shape[1]):
-                slot_preds_list[i].append(slot_label_map[slot_preds[i, j]])
-                slot_labels_list[i].append(
-                    slot_label_map[slot_label_ids[i, j]])
-
+                if slot_label_ids[i, j] != pad_label_id:
+                    slot_preds_list[i].append(slot_label_map[slot_preds[i, j]])
+                    slot_labels_list[i].append(
+                        slot_label_map[slot_label_ids[i, j]])
         # add other Model metrics
         metrics.update(get_modelMetrics(slot_preds_list,
                                         intent_preds, slot_labels_list, intent_label_ids))
 
-        logging.info('****Model eval metrics****')
+        logging.info('**** Start evalulate Model with {mode} data ****')
+        logger.info(f'example nums:{len(dataset)}')
+        logger.info(f'Batch size:{self.args.bs}')
+
         for key in sorted(metrics.keys()):
             logger.info(f'{key}={str(metrics[key])}')
 
