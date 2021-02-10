@@ -3,7 +3,7 @@ import torch
 
 from data_loader import load_and_cacheExampels
 from trainer import Trainer
-from utils import set_randomSeed, init_logger, load_tokenizer, MODEL_PATH, MODEL_CLASSES
+from utils import set_randomSeed, init_logger, load_tokenizer, MODEL_PATH, MODEL_CLASSES, get_slot_labels
 
 
 def main(args):
@@ -16,7 +16,8 @@ def main(args):
     train_set = load_and_cacheExampels(args, tokenizer, 'train')
     val_set = load_and_cacheExampels(args, tokenizer, 'dev')
     test_set = load_and_cacheExampels(args, tokenizer, 'test')
-
+    slot_vocab = get_slot_labels(args)
+    print(slot_vocab.index('PAD'))
     # build train proccess
     proccesser = Trainer(train_set, val_set, test_set, args)
 
@@ -70,11 +71,13 @@ if __name__ == '__main__':
                         help='Learning rate for AdamW')
     parser.add_argument('--weight_decay', type=float,
                         default=0.0, help='L2 weight regularization for AdamW')
+    parser.add_argument('--adam_epsilon', type=float,
+                        default=1e-8, help='Epsilon for Adam optimizer.')
     parser.add_argument('--max_norm', type=float,
                         default=1.0, help='Max norm to avoid gradinet exploding')
     parser.add_argument('--dropout', type=float,
                         default=0.1, help='Dropout rate')
-    parser.add_argument('--slot_coef', type=float,
+    parser.add_argument('--slot_loss_coef', type=float,
                         default=1.0, help='Slot loss coefficient')
     parser.add_argument('--use_crf', action='store_true',
                         help='Whether to using CRF layer for slot pred')
@@ -88,7 +91,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--slot_pad_label', type=str, default='PAD',
                         help='Pad token for slot label(Noe contribute loss)')
-    parser.add_argument('--ignore_index', type=int, default=1,
+    parser.add_argument('--ignore_index', type=int, default=0,
                         help='Specifies a target value that not contribute loss and gradient')
     args = parser.parse_args()
     args.model_name_or_path = MODEL_PATH[args.model_type]

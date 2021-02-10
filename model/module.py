@@ -7,7 +7,7 @@ class intent_classifier(nn.Module):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.fc_layer = nn.Linear(input_dim, output_dim)
-        self.dropout = dropout_rate
+        self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, hiddens):
         # forward pass
@@ -21,7 +21,7 @@ class slot_classifier(nn.Module):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.fc_layer = nn.Linear(input_dim, output_dim)
-        self.dropout = dropout_rate
+        self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, hiddens):
         # forward pass

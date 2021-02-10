@@ -23,7 +23,6 @@ class JointBert(BertPreTrainedModel):
         # build conditional random field
         if args.use_crf:
             self.crf_layer = CRF(slot_num_labels, batch_first=True)
-        self.init_weights()
 
     def forward(self, input_ids, attention_mask, token_type_ids, slot_labels, intent_labels):
         # get bert hidden state
@@ -48,6 +47,8 @@ class JointBert(BertPreTrainedModel):
             total_loss += intent_loss
 
         if slot_labels is not None:
+            criterion = nn.CrossEntropyLoss(
+                ignore_index=self.args.ignore_index)
             if self.args.use_crf:
                 slot_loss = self.crf_layer(slot_logitics, slot_labels,
                                            mask=attention_mask.byte(), reduction='mean')
@@ -58,11 +59,11 @@ class JointBert(BertPreTrainedModel):
                     active_logictics = slot_logitics.view(
                         -1, self.slot_num_labels)[active_mask]
                     active_labels = slot_labels.view(-1)[active_mask]
-                    slot_loss = F.cross_entropy(
-                        active_logictics, active_labels, ignore_index=self.args.ignore_idx)
+                    slot_loss = criterion(
+                        active_logictics, active_labels)
                 else:
-                    slot_loss = F.cross_entropy(
-                        slot_logitics.view(-1, self.slot_num_labels), slot_labels.view(-1), ignore_index=self.args.ignore_idx)
+                    slot_loss = criterion(slot_logitics.view(-1, self.slot_num_labels),
+                                          slot_labels.view(-1))
             total_loss += self.args.slot_loss_coef*slot_loss
 
         outputs = ((intent_logticis, slot_logitics),)+outputs[2:]

@@ -35,7 +35,7 @@ def vocab_process(data_dir):
         slot_vocab = sorted(list(slot_vocab), key=lambda x: (x[2:], x[:2]))
 
         # save slot_vocab
-        addition_token = ['UNK', 'PAD']
+        addition_token = ['PAD', 'UNK']
         for t in addition_token:
             f_w.write(t+'\n')
         for s in slot_vocab:
