@@ -1,5 +1,7 @@
 PAD
 UNK
+<sos>
+<eos>
 O
 B-album
 I-album

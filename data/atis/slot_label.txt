@@ -1,5 +1,7 @@
 PAD
 UNK
+<sos>
+<eos>
 O
 B-aircraft_code
 B-airline_code
