@@ -2,7 +2,7 @@ import torch
 import random
 import json
 import os
-from utils import get_vocab
+import utils
 from torch import nn
 from torch.nn import functional as F
 from .module import slot_classifier, intent_classifier
@@ -94,17 +94,18 @@ class Attentioner(nn.Module):
 
 
 class Joint_AttnSeq2Seq(nn.Module):
-    def __init__(self, encoder, decoder, attner, intent_classifier, args):
-        self.encoder = encoder
-        self.decoder = decoder
-        self.attner = attner
-        self.intent_classifier = intent_classifier
+    def __init__(self, configs, args):
+        self.encoder = BiEncoder(configs, args)
+        self.decoder = Decoder(configs, args)
+        self.attner = Attentioner(configs)
+        self.intent_classifier = intent_classifier(
+            configs['hid_dim']*3, configs['intent_label_nums'], args.dropout)
         self.args = args
         self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignore_index)
         self.device = torch.device('cuda:0') if torch.cuda.is_available() or not args.no_cuda \
             else torch.device('cpu')
 
-    def forward(self, src_tensors, trg_tensors, intent_labels):
+    def forward(self, src_tensors, trg_tensors, intent_labels, teach_ratio=0.5):
         seqLen = trg_tensors.size()[0]
         Batch_size = trg_tensors.size()[1]
         slot_labels_num = self.decoder.output_dim
@@ -154,7 +155,7 @@ class Joint_AttnSeq2Seq(nn.Module):
 
             # compute next decoder_token id
             # t+1 decoder_input=[Bs,]
-            use_teacher = True if random.random() < self.args.teach_ratio else False
+            use_teacher = True if random.random() < teach_ratio else False
             if use_teacher:
                 decoder_input = trg_tensors[idx+1, :]
             else:
@@ -162,15 +163,14 @@ class Joint_AttnSeq2Seq(nn.Module):
                     F.softmax(decoder_input, dim=1), dim=1)
 
         # compute slot_loss
-        slot_preds = slot_preds.view(-1, slot_labels_num)
-        trg_tensors = trg_tensors.view(-1)
-        slot_loss = self.criterion(slot_preds, trg_tensors)
+        slot_loss = self.criterion(slot_preds.view(-1, slot_labels_num),
+                                   trg_tensors.view(-1))
 
         total_loss += (self.args.slot_loss_coef*slot_loss)
 
-        return total_loss
+        return (total_loss, (intent_logitics, slot_preds.permute(1, 0, 2)))
 
-    def get_predict(self, src_tensors, trg_initTokenId, trg_endTokenId):
+    def get_predict(self, src_tensors, origin_len, trg_initTokenId, trg_endTokenId):
         slot_preds = []
         # 1.encoder stage
         # encoder output=[seqlen,bs,hid_dim]
@@ -183,17 +183,15 @@ class Joint_AttnSeq2Seq(nn.Module):
         aligned_inputs = encoder_outputs[1:, :, :]
 
         # compute attention weight
-        decoder_attnW = self.attner(
-            decoder_hidden, encoder_outputs)
+        decoder_attnW = self.attner(decoder_hidden, encoder_outputs)
         # get intent logticis
         # intent_logitics=[Bs,intent_labels_num]
         intent_logitics = self.intent_classifier(
             decoder_hidden, contexts=encoder_outputs, attn_weights=decoder_attnW)
-        intent_preds = torch.argmax(F.softmax(intent_logitics, dim=1), dim=1)
 
         # get decoder logitics
         decoder_input = torch.tensor([trg_initTokenId], device=self.device)
-        align_maxLen = aligned_inputs.size()[0]
+        align_maxLen = origin_len
 
         for idx in range(align_maxLen):
             # aligned=[Bs,]
@@ -212,46 +210,41 @@ class Joint_AttnSeq2Seq(nn.Module):
             decoder_input = torch.argmax(
                 F.softmax(decoder_input, dim=1), dim=1)
 
+            slot_preds.append(decoder_input.cpu().item())
             # determined decoder_input
             if decoder_input.cpu().item() == trg_endTokenId:
                 break
 
-            slot_preds.append(decoder_input.cpu().item())
-
-        return intent_preds, slot_preds
+        return intent_logitics, slot_preds
 
     @classmethod
-    def reload_model(cls, model_dir_path):
+    def reload_model(cls, model_dir_path, train_args):
         # confirm whether model dir exists
         if not os.path.exists(model_dir_path):
             raise FileNotFoundError('Model_dir_path not exists')
         config_path = os.path.join(model_dir_path, 'config.json')
-        args_path = os.path.join(model_dir_path, 'train_args.bin')
         params_path = os.path.join(model_dir_path, 'pretrain_model.pt')
 
         # loading  data
         with open(config_path, 'r', encoding='utf-8') as f_r:
             configs = json.load(f_r)
 
-        train_args = torch.load(args_path)
         model_params = torch.load(params_path)['model_state_dict']
         # initalize model object
-        encoder = BiEncoder(configs, train_args)
-        decoder = Decoder(configs, train_args)
-        attner = Attentioner(configs)
-        classifier = intent_classifier(
-            configs['hid_dim'] * 3, configs['intent_label_nums'], train_args.dropout)
-        model = cls(encoder, decoder, attner, intent_classifier, train_args)
+
+        model = cls(configs, train_args)
 
         # loading pretrained weights
         model.load_state_dict(model_params)
 
         return model
+
+
 RnnConfig = {
     'input_dim': None,
-    'embed_dim':512,
-    'hid_dim':256,
-    'n_layers':1,
-    'slot_label_nums':None,
-    'intent_label_nums':None,
+    'embed_dim': 512,
+    'hid_dim': 256,
+    'n_layers': 1,
+    'slot_label_nums': None,
+    'intent_label_nums': None,
 }

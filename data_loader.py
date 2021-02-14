@@ -8,7 +8,20 @@ from utils import get_intent_labels, get_slot_labels
 logger = logging.getLogger(__name__)
 
 
-class InputExamples:
+class Examples:
+    def str_to_dict(self):
+        '''Serialize example attr to dict'''
+        output = copy.deepcopy(self.__dict__)
+        return output
+
+    def to_json_strng(self):
+        return json.dumps(self.str_to_dict, sort_keys=True, indent=2)
+
+    def __repr__(self):
+        return str(self.to_json_strng)
+
+
+class InputExamples(Examples):
     '''
     A single string/example for sentence classification/labeling
     guid:
@@ -23,19 +36,8 @@ class InputExamples:
         self.slot_labels = slot_labels
         self.intent_label = intent_label
 
-    def str_to_dict(self):
-        '''Serialize example attr to dict'''
-        output = copy.deepcopy(self.__dict__)
-        return output
 
-    def to_json_strng(self):
-        return json.dumps(self.str_to_dict, sort_keys=True, indent=2)
-
-    def __repr__(self):
-        return str(self.to_json_strng)
-
-
-class InputFeatures:
+class InputBertFeatures(Examples):
     '''
     A examples feature for sentence classifcaition/tagging
 
@@ -48,16 +50,12 @@ class InputFeatures:
         self.slot_labels = slot_labels
         self.intent_label = intent_label
 
-    def str_to_dict(self):
-        '''Serialize example attr to dict'''
-        outputs = copy.deepcopy(self.__dict__)
-        return outputs
 
-    def to_json_str(self):
-        return json.dumps(self.str_to_dict, indent=2, sort_keys=True)
-
-    def __repr__(self):
-        return str(self.to_json_str)
+class InputRnnFeatures(Examples):
+    def __init__(self, src_tokenIds, trg_tokenIds, intent_label):
+        self.src_tokenIds = src_tokenIds
+        self.trg_tokenIds = trg_tokenIds
+        self.intent_label = intent_label
 
 
 class JointProcesser:
@@ -125,16 +123,66 @@ class JointProcesser:
             set_type=mode)
 
 
-def convert_to_features(data,
-                        max_seqLen,
-                        tokenizer,
-                        pad_label_id=-100,
-                        cls_token_segment_id=0,
-                        sep_token_segment_id=0,
-                        pad_token_segment_id=0,
-                        sentA_id=0,
-                        with_padding_mask=True
-                        ):
+def convert_to_Seq2SeqFeatures(data, max_seqLen,
+                               word_vocab, pad_token_id,
+                               src_initTokenId=2, src_endTokenId=3,
+                               trg_initTokenId=2, trg_endTokenId=3,
+                               ):
+    # get special token id
+    word_unkId = word_vocab.index('UNK')
+    # 整理examples features
+    examples = []
+    for ex_id, example in enumerate(data):
+        if ex_id % 5000 == 0:
+            logger.info(f'Already convert {ex_id} examples!')
+        tokens = example.words
+        slots = example.slot_labels
+
+        # truncate max_seqLen
+        special_token_count = 2
+        if len(tokens) > (max_seqLen - special_token_count):
+            tokens = tokens[:(max_seqLen - special_token_count)]
+            slots = slots[:(max_seqLen - special_token_count)]
+
+        # add special tokens
+        tokens = ['<sos>'] + tokens + ['<eos>']
+        word_tokenIds = [word_vocab.index(
+            t) if t in word_vocab else word_unkId for t in tokens]
+
+        slots = [trg_initTokenId] + slots + [trg_endTokenId]
+
+        # pad tokens
+        pad_len = max_seqLen - len(tokens)
+        word_tokenIds += [pad_token_id] * pad_len
+        slots += [pad_token_id] * pad_len
+        intent_label = int(example.intent_label)
+
+        assert len(word_tokenIds) == len(slots) == max_seqLen
+
+        if ex_id < 5:
+            logger.info('****Display examples****')
+            logger.info('Uid:{}'.format(example.guid))
+            logger.info('token_ids:{}'.format(word_tokenIds))
+            logger.info('slot_labels(trg_tokens):{}'.format(slots))
+            logger.info('intent_label:{}'.format(intent_label))
+
+        examples.append(InputRnnFeatures(src_tokenIds=word_tokenIds,
+                                         trg_tokenIds=slots,
+                                         intent_label=intent_label))
+
+    return examples
+
+
+def convert_to_BertFeatures(data,
+                            max_seqLen,
+                            tokenizer,
+                            pad_label_id=-100,
+                            cls_token_segment_id=0,
+                            sep_token_segment_id=0,
+                            pad_token_segment_id=0,
+                            sentA_id=0,
+                            with_padding_mask=True
+                            ):
     # get special token
     cls_token = tokenizer.cls_token
     sep_token = tokenizer.sep_token
@@ -208,11 +256,11 @@ def convert_to_features(data,
             logger.info('intent_label:{}'.format(intent_label))
             logger.info('slot_labels:{}'.format(slot_labels))
 
-        examples.append(InputFeatures(input_tokenIds=token_ids,
-                                      token_type_ids=token_type_ids,
-                                      attention_mask=attn_mask,
-                                      slot_labels=slot_labels,
-                                      intent_label=intent_label))
+        examples.append(InputBertFeatures(input_tokenIds=token_ids,
+                                          attention_mask=attn_mask,
+                                          token_type_ids=token_type_ids,
+                                          slot_labels=slot_labels,
+                                          intent_label=intent_label))
 
     return examples
 
@@ -254,25 +302,25 @@ def load_and_cacheExampels(args, tokenizer, mode):
 
         # transform example to feature
         pad_label_id = args.ignore_index
-        features = convert_to_features(
-            examples, args.max_seqLen, tokenizer, pad_label_id=pad_label_id)
 
+        if args.model_type.endswith('bert'):
+            features = convert_to_BertFeatures(
+                examples, args.max_seqLen, tokenizer, pad_label_id=pad_label_id)
+        elif args.model_type.endswith('S2S'):
+            features = convert_to_Seq2SeqFeatures(
+                examples, args.max_seqLen, tokenizer, pad_token_id=pad_label_id)
         # save to cached file path
         torch.save(features, cached_file_path)
         logger.info(f'Save features to {cached_file_path}')
-    # transform features into tensor
-    token_ids_tensors = torch.tensor(
-        [f.input_tokenIds for f in features], dtype=torch.long)
-    token_type_ids_tensors = torch.tensor(
-        [f.token_type_ids for f in features], dtype=torch.long)
-    attn_mask_tensors = torch.tensor(
-        [f.attention_mask for f in features], dtype=torch.long)
-    slot_label_tensors = torch.tensor(
-        [f.slot_labels for f in features], dtype=torch.long)
-    intent_label_tensors = torch.tensor(
-        [f.intent_label for f in features], dtype=torch.long)
 
-    dataset = TensorDataset(token_ids_tensors, attn_mask_tensors,
-                            token_type_ids_tensors, slot_label_tensors, intent_label_tensors)
+    # transform features into tensor
+    f_tensors = []
+    feature_names = vars(features[0]).keys()
+    for f_name in feature_names:
+        tensors = torch.tensor([getattr(f, f_name)
+                                for f in features], dtype=torch.long)
+        f_tensors.append(tensors)
+
+    dataset = TensorDataset(*tuple(f_tensors))
 
     return dataset
