@@ -5,13 +5,21 @@ import torch
 import numpy as np
 
 from transformers import BertConfig, BertTokenizer
-from model import modeling_JointBert
+from model import modeling_JointBert, modeling_JointRnn
 from seqeval.metrics import f1_score, recall_score, precision_score
+
+
+def get_word_vocab(args):
+    return [w.strip() for w in open(os.path.join(args.data_dir, args.task, args.word_vocab_file))]
+
+
 MODEL_CLASSES = {
-    'joint_bert': (BertConfig, BertTokenizer, modeling_JointBert.JointBert)
+    'joint_bert': (BertConfig, BertTokenizer, modeling_JointBert.JointBert),
+    'joint_AttnS2S': (modeling_JointRnn.RnnConfig, modeling_JointRnn.Joint_AttnSeq2Seq),
 }
 MODEL_PATH = {
     'joint_bert': 'bert-base-uncased',
+    'joint_AttnS2S': './atis_model/joint_attnS2S'
 }
 
 
@@ -24,6 +32,7 @@ def get_slot_labels(args):
 
 
 def load_tokenizer(args):
+
     return MODEL_CLASSES[args.model_type][1].from_pretrained(MODEL_PATH[args.model_type])
 
 
@@ -48,11 +57,11 @@ def get_sents_frame_acc(slot_preds, intent_preds, slot_labels, intent_labels):
     # 2.compute sents acc
     # confirm same shape
     slot_correct = []
-    for slot,label in zip(slot_preds,slot_labels):
-        correct=True
-        for s,l in zip(slot,label):
-            if l!=s:
-                correct=False
+    for slot, label in zip(slot_preds, slot_labels):
+        correct = True
+        for s, l in zip(slot, label):
+            if l != s:
+                correct = False
             break
         slot_correct.append(correct)
     slot_correct = np.array(slot_correct)

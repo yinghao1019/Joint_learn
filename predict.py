@@ -7,7 +7,7 @@ import torch
 from tqdm import tqdm, trange
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, SequentialSampler, DataLoader
-from utils import MODEL_CLASSES, get_slot_labels, get_intent_labels, load_tokenizer, init_logger
+from utils import MODEL_CLASSES, get_slot_labels, get_intent_labels, load_tokenizer, init_logger, get_word_vocab
 logger = logging.getLogger(__name__)
 
 
@@ -28,17 +28,62 @@ def load_pretrainModel(pred_config, args, intent_num_labels, slot_num_labels):
     # get Model
     config, _, model = MODEL_CLASSES[pred_config.model_type]
     # load model pretrain weight
-    config = config.from_pretrained(pred_config.model_dir)
-    model = model.from_pretrained(pred_config.model_dir, config=config, args=args,
-                                  intent_num_labels=intent_num_labels, slot_num_labels=slot_num_labels)
+    if pred_config.model_type.endswith('bert'):
+        config = config.from_pretrained(pred_config.model_dir)
+        model = model.from_pretrained(pred_config.model_dir, config=config, args=args,
+                                      intent_num_labels=intent_num_labels, slot_num_labels=slot_num_labels)
+    else:
+        model = model.reload_model(pred_config.model_dir)
 
     return model
 
 
-def convert_input_file_to_tensor(input_file, tokenizer, args, pred_config,
-                                 pad_label_id=0, pad_token_segment_id=0,
-                                 sep_token_segment_id=0, sentA_segment_id=0,
-                                 with_pad_mask_zero=True):
+def convert_input_file_to_RnnTensor(input_file, word_vocab, args, pred_config, pad_token_id):
+    # get special token Id
+    sos_token_id = word_vocab('<sos>')
+    eos_token_id = word_vocab.index('<eos>')
+    pad_token_id = pad_token_id
+
+    all_inputIds = []
+    all_inputLens = []
+    for words in input_file:
+
+        special_counts = 2
+        # truncate max seqLen
+        max_seqLen = args.max_seqLen
+        if len(words) > (max_seqLen-special_counts):
+            words = words[:(max_seqLen-special_counts)]
+
+        # add special token
+        words = ['<sos>']+words+['<eos>']
+        # convert to wordId
+        wordIds = [word_vocab.index(
+            w) if w in word_vocab else word_vocab.index('UNK') for w in words]
+        # compute origin len
+        origin_len = len(wordIds)
+
+        # pad seqLen
+        pad_len = max_seqLen-origin_len
+        wordIds += [pad_token_id]*pad_len
+
+        assert len(wordIds) == max_seqLen, 'token Id len:{} vs max_len:{}'
+
+        all_inputIds.append(wordIds)
+        all_inputLens.append(origin_len-1)  # get decoder output max len
+
+    # convert it to tensor
+    inputIds_tensors = torch.tensor(all_inputIds, dtype=torch.long)
+    inputLens_tensors = torch.tensor(all_inputLens, dtype=torch.long)
+    # create tensor dataset
+    dataset = TensorDataset(inputIds_tensors, inputLens_tensors)
+
+    return dataset
+
+
+def convert_input_file_to_BertTensor(input_file, tokenizer, args, pred_config,
+                                     pad_label_id=0, pad_token_segment_id=0,
+                                     sep_token_segment_id=0, sentA_segment_id=0,
+                                     with_pad_mask_zero=True):
     # prepare special token and id
     cls_token = tokenizer.cls_token
     sep_token = tokenizer.sep_token
@@ -106,7 +151,44 @@ def convert_input_file_to_tensor(input_file, tokenizer, args, pred_config,
     return dataset
 
 
-def get_predict(model, Dataset, pred_config, args, device):
+def get_s2s_predict(model, Dataset, pred_config, args, slot_vocab, device):
+    slot_allPreds = []
+    slot_allMask = []
+    intent_allPreds = None
+
+    model.eval()
+    for data in Dataset:
+        inputs = {
+            'src_tensors': data[0].to(device),
+            'decode_len': data[1].item(),
+            'trg_initTokenId': slot_vocab.index('<sos>'),
+            'trg_endTokenId': slot_vocab.index('<eos>'), }
+        with torch.no_grad():
+            intent_logitcis, slot_pred = model.get_predict(inputs)
+
+        assert len(slot_pred) == (
+            inputs['decode_len']), f'predictLen:{len(slot_pred)} vs origin len:{data[1].item()}'
+
+        # 1.get intent
+        if intent_allPreds is not None:
+            intent_allPreds = torch.cat((intent_allPreds, intent_logitcis))
+        else:
+            intent_allPreds = intent_logitcis
+
+        # 2.get slot_preds amd slot_mask
+        slot_mask = [1]*len(slot_pred[:-1])
+
+        slot_allPreds.append(slot_pred[:-1])
+        slot_allMask.append(slot_mask)
+
+    # get max prob intent class
+    intent_allPreds = torch.argmax(torch.softmax(
+        intent_allPreds, dim=1), dim=1).cpu().numpy()
+
+    return intent_allPreds, slot_allPreds, slot_allMask
+
+
+def get_pretrain_predict(model, Dataset, pred_config, args, device):
     # build iterator
     Batch_size = len(Dataset) if len(
         Dataset) < pred_config.bs else pred_config.bs
@@ -215,10 +297,9 @@ def main(pred_config):
     args_path = os.path.join(pred_config.model_dir, 'train_args.bin')
     train_args = torch.load(args_path)
 
-    # load tokenizer % vocab
+    # load labels
     intent_vocab = get_intent_labels(train_args)
     slot_vocab = get_slot_labels(train_args)
-    tokenizer = load_tokenizer(train_args)
 
     # load preain Model
     model = load_pretrainModel(
@@ -228,19 +309,31 @@ def main(pred_config):
     # read data
     examples = read_file(pred_config)
     pad_label_id = pred_config.pad_label_id
-    # convert data to tensor
-    dataset = convert_input_file_to_tensor(
-        examples, tokenizer, train_args, pred_config, pad_label_id=pad_label_id)
+
+    logger.info(f'Start to predict using {pred_config.model_type}')
+    if pred_config.model_type.enswith('S2S'):
+        # convert data to tensor
+        tokenizer = get_word_vocab(train_args)
+        dataset = convert_input_file_to_RnnTensor(examples, tokenizer, train_args,
+                                                  pred_config, pad_token_id=pad_label_id)
+
+        # get predict!
+        intent_preds, slot_preds, slot_masks = get_s2s_predict(model, dataset, pred_config,
+                                                               train_args, slot_vocab, device)
+    elif pred_config.model_type.enswith('bert'):
+        # convert data to tensor
+        tokenizer = load_tokenizer(train_args)
+        dataset = convert_input_file_to_BertTensor(examples, tokenizer, train_args,
+                                                   pred_config, pad_label_id=pad_label_id)
+
+        # get predict!
+        intent_preds, slot_preds, slot_masks = get_pretrain_predict(model, dataset, pred_config,
+                                                                    train_args, device)
+
     logger.info('***Display PredictInfo***')
     logger.info(f'Predict number:{len(dataset)}')
-    logger.info(f'Using Model type:{pred_config.model_type}')
     logger.info(f'Predict max_seqLen:{train_args.max_seqLen}')
     logger.info(f'Whether to use CRF:{train_args.use_crf}')
-
-    # predict!
-    logger.info(f'Start to predict using {pred_config.model_type}')
-    intent_preds, slot_preds, slot_masks = get_predict(model, dataset, pred_config,
-                                                       train_args, device)
 
     intent_labels, slot_labels = convert_to_labels(intent_vocab, slot_vocab,
                                                    intent_preds, slot_preds,
@@ -256,7 +349,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_file', type=str,
                         default=None, required=True, help='output file for prediction')
     parser.add_argument('--model_type', type=str, default=None,
-                        required=True, help='selected Model type to load')
+                        required=True, help='Model type selected in list:'+','.join(MODEL_CLASSES.keys()))
     parser.add_argument('--model_dir', type=str, default='./atis_model',
                         required=True, help='load pretrain Model dir')
     parser.add_argument('--no_cuda', action='store_true',
