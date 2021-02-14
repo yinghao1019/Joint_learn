@@ -345,13 +345,13 @@ def main(pred_config):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--input_file', type=str,
-                        default=None, required=True, help='Input file for prediction')
+                        default=None, required=True, help='Input file for prediction.Required argument')
     parser.add_argument('--output_file', type=str,
-                        default=None, required=True, help='output file for prediction')
-    parser.add_argument('--model_type', type=str, default=None,
+                        default=None, required=True, help='output file for prediction.Required argument')
+    parser.add_argument('--model_type', type=str, default=None, choices=MODEL_CLASSES.keys(),
                         required=True, help='Model type selected in list:'+','.join(MODEL_CLASSES.keys()))
-    parser.add_argument('--model_dir', type=str, default='./atis_model',
-                        required=True, help='load pretrain Model dir')
+    parser.add_argument('--model_dir', type=str, default=None,
+                        required=True, help='load pretrain Model dir.Required argument')
     parser.add_argument('--no_cuda', action='store_true',
                         help='Control to put data in cpu')
     parser.add_argument('--pad_label_id', default=0, type=int,

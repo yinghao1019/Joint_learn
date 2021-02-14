@@ -46,7 +46,7 @@ if __name__ == '__main__':
                         help='Root dir path for save data.Default ./data')
     parser.add_argument('--model_dir', default=None, type=str, required=True,
                         help='Path to save training model.Required Argument.')
-    parser.add_argument('--task', default=None, required=True, choices=[],
+    parser.add_argument('--task', default=None, required=True, choices=['snips', 'atis'],
                         type=str, help='Select train Model task:[atis,snips].Required Argument.')
     parser.add_argument('--intent_label_file', default='intent_label.txt',
                         type=str, help='File path for loading intent_label vocab')
@@ -56,7 +56,7 @@ if __name__ == '__main__':
                         type=str, help='File path for loading word vocab ')
 
     parser.add_argument('--model_type', default='joint_bert', type=str, required=True,
-                        help='Model type selected in the list:'+','.join(MODEL_CLASSES.keys()))
+                        choices=MODEL_CLASSES.keys(), help='Model type selected in the list:'+','.join(MODEL_CLASSES.keys()))
 
     parser.add_argument('--random_seed', type=int,
                         default=1234, help='set random seed')
