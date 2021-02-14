@@ -2,8 +2,8 @@ import argparse
 import torch
 
 from data_loader import load_and_cacheExampels
-from trainer import Trainer
-from utils import set_randomSeed, init_logger, load_tokenizer, MODEL_PATH, MODEL_CLASSES, get_slot_labels
+from trainer import PreTrainedTrainer, RnnTrainer
+from utils import set_randomSeed, init_logger, load_tokenizer, MODEL_PATH, MODEL_CLASSES, get_word_vocab
 
 
 def main(args):
@@ -11,39 +11,51 @@ def main(args):
     init_logger()
 
     # load tokenizer
-    tokenizer = load_tokenizer(args)
+    if args.model_type.endswith('S2S'):
+        tokenizer = get_word_vocab(args)
+    elif args.model_type.endswith('bert'):
+        tokenizer = load_tokenizer(args)
     # load dataset
     train_set = load_and_cacheExampels(args, tokenizer, 'train')
     val_set = load_and_cacheExampels(args, tokenizer, 'dev')
     test_set = load_and_cacheExampels(args, tokenizer, 'test')
-    slot_vocab = get_slot_labels(args)
-    # build train proccess
-    proccesser = Trainer(train_set, val_set, test_set, args)
+    # # build train proccess
+    if args.model_type.endswith('S2S'):
+        proccesser = RnnTrainer(train_set, val_set, test_set, args)
+    elif args.model_type.endswith('bert'):
+        proccesser = PreTrainedTrainer(train_set, val_set, test_set, args)
 
-    if args.using_train:
+    if args.do_train:
         proccesser.train_model()
 
-    if args.using_eval:
-        proccesser = Trainer.reload_model_(
-            args.model_dir, train_set, val_set, test_set)
+    if args.do_eval:
+        if args.model_type.endswith('S2S'):
+            proccesser = RnnTrainer.reload_data_(args.model_dir,
+                                                 train_set, val_set, test_set)
+
+        elif args.model_type.endswith('bert'):
+            proccesser = PreTrainedTrainer.reload_data_(args.model_dir,
+                                                        train_set, val_set, test_set)
         proccesser.evaluate('eval')
 
 
 if __name__ == '__main__':
     # set run script optinal arg
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', default='./data', type=str,
+    parser.add_argument('--data_dir', default='.\data', type=str,
                         help='Root dir path for save data.Default ./data')
-    parser.add_argument('--model_dir', default='./atis_model', type=str,
-                        help='Path to save model.Default is atis_model')
-    parser.add_argument('--task', default='atis', required=True,
-                        type=str, help='Train Model task.Default is atis')
+    parser.add_argument('--model_dir', default=None, type=str, required=True,
+                        help='Path to save training model.Required Argument.')
+    parser.add_argument('--task', default=None, required=True, choices=[],
+                        type=str, help='Select train Model task:[atis,snips].Required Argument.')
     parser.add_argument('--intent_label_file', default='intent_label.txt',
-                        type=str, help='File for save intent_label vocab')
+                        type=str, help='File path for loading intent_label vocab')
     parser.add_argument('--slot_label_file', default='slot_label.txt',
-                        type=str, help='File for save slot_label vocab ')
+                        type=str, help='File path for loading slot_label vocab ')
+    parser.add_argument('--word_vocab_file', default='word_vocab.txt',
+                        type=str, help='File path for loading word vocab ')
 
-    parser.add_argument('--model_type', default='joint_bert', type=str,
+    parser.add_argument('--model_type', default='joint_bert', type=str, required=True,
                         help='Model type selected in the list:'+','.join(MODEL_CLASSES.keys()))
 
     parser.add_argument('--random_seed', type=int,
@@ -81,9 +93,9 @@ if __name__ == '__main__':
     parser.add_argument('--use_crf', action='store_true',
                         help='Whether to using CRF layer for slot pred')
 
-    parser.add_argument('--using_train', action='store_true',
+    parser.add_argument('--do_train', action='store_true',
                         help='Whether to run training')
-    parser.add_argument('--using_eval', action='store_true',
+    parser.add_argument('--do_eval', action='store_true',
                         help='Whether to run evaluate')
     parser.add_argument('--no_cuda', action='store_true',
                         help='Control using gpu or cpu to train Model')
@@ -94,5 +106,9 @@ if __name__ == '__main__':
                         help='Specifies a target value that not contribute loss and gradient')
     args = parser.parse_args()
     args.model_name_or_path = MODEL_PATH[args.model_type]
+    if args.model_type.endswith('S2S'):
+        args.batch_first = False
+    elif args.model_type.endswith('bert'):
+        args.batch_first = True
 
     main(args)
