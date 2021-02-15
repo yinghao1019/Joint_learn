@@ -91,7 +91,7 @@ $ python main.py --
 |           | ALBERT + CRF     | 97.42          | **96.32**   | **88.69**        |
 
 ## Sentence predict Result  
-
+![](./images/result.png)  
 ## References  
   
 - [Huggingface Transformers](https://github.com/huggingface/transformers)  
