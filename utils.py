@@ -15,7 +15,7 @@ def get_word_vocab(args):
 
 MODEL_CLASSES = {
     'joint_bert': (BertConfig, BertTokenizer, modeling_JointBert.JointBert),
-    'joint_AttnS2S': (modeling_JointRnn.RnnConfig, modeling_JointRnn.Joint_AttnSeq2Seq),
+    'joint_AttnS2S': (modeling_JointRnn.RnnConfig, get_word_vocab, modeling_JointRnn.Joint_AttnSeq2Seq),
 }
 MODEL_PATH = {
     'joint_bert': 'bert-base-uncased',

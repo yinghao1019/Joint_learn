@@ -4,6 +4,7 @@ import numpy as np
 import random
 import tqdm
 import utils
+import json
 
 import torch
 import torch.nn.functional as F
@@ -86,7 +87,7 @@ class BaseTrainer:
                 else:
                     # inputs=[seqlen,bs]
                     inputs = tuple(t.permute(1, 0).to(self.device)
-                                   for t in batch[:2])+(batch[-1])
+                                   for t in batch[:2])+(batch[-1].to(self.device),)
 
                 # forward pass
                 outputs = self.model(*inputs)
@@ -130,13 +131,10 @@ class BaseTrainer:
     def reload_data_(cls, model_dir, train_set, eval_set, test_set):
         # check model dir whether exists
         if os.path.exists(model_dir):
-            try:
-                args_path = os.path.join(model_dir, 'train_args.bin')
-                args = torch.load(args_path)
-                logger.info('****Reload Model success!****')
-                return cls(train_set, eval_set, test_set, args,  pretrained_path=args.model_dir)
-            except:
-                logger.info('Model some file was missed!')
+            args_path = os.path.join(model_dir, 'train_args.bin')
+            args = torch.load(args_path)
+            logger.info('****Reload Model success!****')
+            return cls(train_set, eval_set, test_set, args,  pretrained_path=args.model_dir)
         else:
             raise FileNotFoundError('Model dir not found!')
 
@@ -269,7 +267,7 @@ class PreTrainedTrainer(BaseTrainer):
     def save_model(self, optimizer, lr_scheduler, global_step):
         # comfirm model dir
         if not os.path.isdir(self.args.model_dir):
-            os.mkdir(self.args.model_dir)
+            os.makedirs(self.args.model_dir)
         # prepare related Model info.
         optim_params = {
             'optimizer': optimizer.state_dict(),
@@ -299,8 +297,11 @@ class RnnTrainer(BaseTrainer):
 
         # load Model
         self.config, self.model = MODEL_CLASSES[args.model_type]
+        self.config['input_dim'] = len(self.word_vocab)
+        self.config['slot_label_nums'] = len(self.slot_vocab)
+        self.config['intent_label_nums'] = len(self.intent_vocab)
         if pretrained_path is not None:
-            self.model = self.model.reload_model(pretrained_path)
+            self.model = self.model.reload_model(pretrained_path,args)
         else:
             self.model = self.model(self.config, args)
 
@@ -354,7 +355,8 @@ class RnnTrainer(BaseTrainer):
                 intent_label_ids = intent_labels
 
             # 2.slot_preds=[Bs,seqLen,slot_num_tags]
-            slot_label = batch[1].detach()
+            #   slot_label=[Bs,seqlen]
+            slot_label = inputs['trg_tensors'].permute(1, 0).detach()
             if slot_preds is not None:
                 slot_preds = torch.cat((slot_preds, slot_logitics), dim=0)
                 slot_label_ids = torch.cat((slot_label_ids, slot_label), dim=0)
@@ -375,7 +377,7 @@ class RnnTrainer(BaseTrainer):
         # filter slot label pad token
         slot_preds = torch.argmax(
             F.softmax(slot_preds, dim=2), dim=2).cpu().numpy()
-        slot_label_ids = slot_label_ids.cpu().numpy()
+        slot_label_ids = slot_label_ids[:, 1:].cpu().numpy()
 
         slot_label_map = {idx: s for idx, s in enumerate(self.slot_vocab)}
         slot_preds_list = [[] for _ in range(slot_label_ids.shape[0])]
@@ -401,30 +403,30 @@ class RnnTrainer(BaseTrainer):
 
         return metrics
 
-        def save_model(self, optimizer, lr_scheduler, global_step):
-            # comfirm model dir
-            if not os.path.isdir(self.args.model_dir):
-                os.mkdir(self.args.model_dir)
+    def save_model(self, optimizer, lr_scheduler, global_step):
+        # comfirm model dir
+        if not os.path.isdir(self.args.model_dir):
+            os.makedirs(self.args.model_dir)
 
-            args_savePath = os.path.join(self.args.model_dir, 'train_args.bin')
-            model_path = os.path.join(self.args.model_dir, 'pretrain_model.pt')
-            config_path = os.path.join(self.args.model_dir, 'config.json')
+        args_savePath = os.path.join(self.args.model_dir, 'train_args.bin')
+        model_path = os.path.join(self.args.model_dir, 'pretrain_model.pt')
+        config_path = os.path.join(self.args.model_dir, 'config.json')
 
-            # prepare related Model info.
-            optim_params = {
-                'model_state_dict': self.model.state_dict(),
-                'optim_state_dict': optimizer.state_dict(),
-                'lr_scheduler': lr_scheduler.state_dict(),
-                'global_step': global_step,
-            }
+        # prepare related Model info.
+        optim_params = {
+            'model_state_dict': self.model.state_dict(),
+            'optim_state_dict': optimizer.state_dict(),
+            'lr_scheduler': lr_scheduler.state_dict(),
+            'global_step': global_step,
+        }
 
-            # Save data!
-            try:
-                with open(config_path, 'w', encoding='utf-8') as f_w:
-                    json.dump(self.config, f_w)
+        # Save data!
+        try:
+            with open(config_path, 'w', encoding='utf-8') as f_w:
+                json.dump(self.config, f_w)
 
-                torch.save(optim_params, model_path)
-                torch.save(self.args, args_savePath)
-                logger.info(f'Save model to {self.args.model_dir} Success!')
-            except:
-                logger.info(f'Save model failed!')
+            torch.save(optim_params, model_path)
+            torch.save(self.args, args_savePath)
+            logger.info(f'Save model to {self.args.model_dir} Success!')
+        except:
+            logger.info(f'Save model failed!')

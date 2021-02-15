@@ -21,7 +21,7 @@ class BiEncoder(nn.Module):
         self.rnn_layer = nn.LSTM(
             self.embed_dim, self.hid_dim, self.n_layers, bidirectional=True)
 
-    def forawrd(self, input_tensors):
+    def forward(self, input_tensors):
         # embed_tensors=[seqlen,bs,embed_dim]
         embed_tensors = self.embed(input_tensors)
         encoder_output, (h_output, c_output) = self.rnn_layer(embed_tensors)
@@ -34,13 +34,14 @@ class BiEncoder(nn.Module):
 
 class Decoder(nn.Module):
     def __init__(self, configs, args):
-        super(Decoder, super).__init__()
+        super(Decoder, self).__init__()
         self.output_dim = configs.get('slot_label_nums')
         self.embed_dim = configs.get('embed_dim')
         self.hid_dim = configs.get('hid_dim')
 
         self.embed = nn.Embedding(self.output_dim, self.embed_dim)
-        self.decode_layer = nn.LSTM(self.embed+self.hid_dim*4, self.hid_dim, 1)
+        self.decode_layer = nn.LSTM(
+            self.embed_dim+self.hid_dim*4, self.hid_dim, 1)
         self.classifier = slot_classifier(
             self.hid_dim, self.output_dim, args.dropout)
 
@@ -60,7 +61,8 @@ class Decoder(nn.Module):
         # concatenate tensors(aligned,embed,context)
         # inputs=[1,bs,embed_dim+aligned_dim+context_dim]
         # outputs=[1,bs,hid_dim]
-        inputs = torch.cat((embed_tensors, aligned_input, context_tensors))
+        inputs = torch.cat(
+            (embed_tensors, aligned_input, context_tensors), dim=2)
         outputs, (h_state, c_state) = self.decode_layer(
             inputs, (h_state, c_state))
 
@@ -88,13 +90,14 @@ class Attentioner(nn.Module):
         hiddens = torch.cat((decoder_hiddens, encoder_outputs), dim=2)
 
         # compute attention weight=[Bs,seqLen]
-        attn_weight = self.softmax(self.attn_layer(hiddens).unsqueeze(1))
+        attn_weight = self.softmax(self.attn_layer(hiddens).squeeze(2))
 
         return attn_weight
 
 
 class Joint_AttnSeq2Seq(nn.Module):
     def __init__(self, configs, args):
+        super(Joint_AttnSeq2Seq, self).__init__()
         self.encoder = BiEncoder(configs, args)
         self.decoder = Decoder(configs, args)
         self.attner = Attentioner(configs)
@@ -120,30 +123,35 @@ class Joint_AttnSeq2Seq(nn.Module):
 
         # get backward rnn hidden_state
         # decoder_hidden=[Bs,hid_dim]
-        # aligned_output=[seqLen,Bs,hid_dim]
+        # aligned_input=[seqLen-1,Bs,hid_dim]
         decoder_hidden, decoder_cell = h_state[-1, :, :], c_state[-1, :, :]
-        aligned_inputs = encoder_outputs[1:, :, :]
 
         # compute attention weight
         decoder_attnW = self.attner(decoder_hidden, encoder_outputs)
 
         # 1.compute intent_loss
         # intent_logitics=[Bs,intent_labels_num]
-        intent_logitics = self.intent_classifier(decoder_hidden, contexts=encoder_outputs,
+        intent_logitics = self.intent_classifier(decoder_hidden, contexts=encoder_outputs.permute(1, 0, 2),
                                                  attn_weights=decoder_attnW)
         intent_loss = self.criterion(intent_logitics, intent_labels)
         total_loss += intent_loss
 
+        # get remove <eos> input
+        # trg_inputs=[seqlen-1,bs]
+        trg_inputs = trg_tensors[:-1, :]
+
         # get decoder init_input
         # decoder_input=[Bs,]
-        decoder_input = trg_tensors[0, :]
-
+        # decoder hidden/cell=[1,Bs,hid_dim]
+        decoder_input = trg_inputs[0, :]
+        decoder_hidden = decoder_hidden.unsqueeze(0)
+        decoder_cell = decoder_cell.unsqueeze(0)
         # slot_decode stage
-        for idx in range(seqLen):
+        for idx in range(1, seqLen):
 
             # aligned inputs=[Bs,encoder_hid_dim]
             # t+1 deocder_input=[Bs,slot_labels_num]
-            aligned = aligned_inputs[idx, :, :]
+            aligned = encoder_outputs[idx, :, :]
             decoder_input, decoder_hidden, decoder_cell = self.decoder(decoder_input, aligned, encoder_outputs,
                                                                        decoder_attnW, decoder_hidden, decoder_cell)
             # save decoder predict
@@ -156,42 +164,41 @@ class Joint_AttnSeq2Seq(nn.Module):
             # compute next decoder_token id
             # t+1 decoder_input=[Bs,]
             use_teacher = True if random.random() < teach_ratio else False
-            if use_teacher:
-                decoder_input = trg_tensors[idx+1, :]
-            else:
-                decoder_input = torch.argmax(
-                    F.softmax(decoder_input, dim=1), dim=1)
+            top1_predict = torch.argmax(F.softmax(decoder_input, dim=1), dim=1)
+
+            decoder_input = trg_tensors[idx] if use_teacher else top1_predict
 
         # compute slot_loss
-        slot_loss = self.criterion(slot_preds.view(-1, slot_labels_num),
-                                   trg_tensors.view(-1))
+        slot_loss = self.criterion(slot_preds[1:, :, :].reshape(-1, slot_labels_num),
+                                   trg_tensors[1:, :].reshape(-1))
 
         total_loss += (self.args.slot_loss_coef*slot_loss)
 
-        return (total_loss, (intent_logitics, slot_preds.permute(1, 0, 2)))
+        return (total_loss, (intent_logitics, slot_preds[1:, :, :].permute(1, 0, 2)))
 
     def get_predict(self, src_tensors, origin_len, trg_initTokenId, trg_endTokenId):
         slot_preds = []
         # 1.encoder stage
         # encoder output=[seqlen,bs,hid_dim]
         encoder_outputs, (h_state, c_state) = self.encoder(src_tensors)
-
+        aligned_inputs = encoder_outputs[1:, :, :]
         # get backward rnn hidden_state
         # decoder_hidden=[Bs,hid_dim]
         # aligned_output=[seqLen,Bs,hid_dim]
         decoder_hidden, decoder_cell = h_state[-1, :, :], c_state[-1, :, :]
-        aligned_inputs = encoder_outputs[1:, :, :]
 
         # compute attention weight
         decoder_attnW = self.attner(decoder_hidden, encoder_outputs)
         # get intent logticis
         # intent_logitics=[Bs,intent_labels_num]
         intent_logitics = self.intent_classifier(
-            decoder_hidden, contexts=encoder_outputs, attn_weights=decoder_attnW)
+            decoder_hidden, contexts=encoder_outputs.permute(1, 0, 2), attn_weights=decoder_attnW)
 
         # get decoder logitics
         decoder_input = torch.tensor([trg_initTokenId], device=self.device)
         align_maxLen = origin_len
+        decoder_hidden = decoder_hidden.unsqueeze(0)
+        decoder_cell = decoder_cell.unsqueeze(0)
 
         for idx in range(align_maxLen):
             # aligned=[Bs,]
@@ -211,10 +218,9 @@ class Joint_AttnSeq2Seq(nn.Module):
                 F.softmax(decoder_input, dim=1), dim=1)
 
             slot_preds.append(decoder_input.cpu().item())
-            # determined decoder_input
-            if decoder_input.cpu().item() == trg_endTokenId:
-                break
 
+            if decoder_input.item() == trg_endTokenId:
+                break
         return intent_logitics, slot_preds
 
     @classmethod
