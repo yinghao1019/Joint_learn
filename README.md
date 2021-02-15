@@ -11,7 +11,7 @@ Architecture is referenced to [monologg/JointBERT](https://github.com/monologg/J
     - total_loss = intent_loss + coef \* slot_loss (Change coef with `--slot_loss_coef` option)  
     - **If you want to use CRF layer, give `--use_crf` option**  
   
-#### 2.AttnSeq2Seq  
+#### 2.AttnSeq2Seq
   
 ![](./images/Attn_seq2seq.png)
 
@@ -23,21 +23,21 @@ Architecture is referenced to [monologg/JointBERT](https://github.com/monologg/J
       
     - Attenion part
      1.Using neural network,last hidden state,encoder hiddens to compute  attention weight.
-     2.using softmax to gain wieght  
+     2.using softmax to gain weight  
      
     -Decoder part
     1.To predict current slots,feed last hidden state,last predict label,aligned encoder hidden,
     context vector.  
     2.using last hidden state & encoder hiddens to compute current context vector  
     3.using init decoder hidden & it's context to compute intent classification  
-    4.total_loss= intent_loss + coef \* slot_loss  
-  
+    4.total_loss= intent_loss + coef \* slot_loss   
+
 ## Dependencies  
 - python>=3.7
-- torch==
-- seqeval==
-- transformers==
-- pytorch-crf==
+- torch==1.5.1
+- seqeval==1.2.2
+- transformers==4.3.0
+- pytorch-crf==0.7.2
   
 ## Dataset
 |       | Train  | Dev | Test | Intent Labels | Slot Labels |
@@ -49,46 +49,52 @@ Architecture is referenced to [monologg/JointBERT](https://github.com/monologg/J
 - Add `UNK` for labels (For intent and slot labels which are only shown in _dev_ and _test_ dataset)
 - Add `PAD` for slot label
 
-## Train & Evaluation  
+## Train & Evaluation (Usage)
   
 ```bash  
-$ python main.py --
+$ python main.py --task {task_name} \
+                 --model_type {model_type} \
+                 --model_dir {model_dir_name} \
+                 --do_train --do_eval \
+                 --use_crf
 
 #For ATIS
+$ python main.py --task atis \
+                 --model_type joint_bert \
+                 --model_dir ./atis_model/joint_bert \
+                 --do_train --do_eval 
 
 #For Snips
+$ python main.py --task snips \
+                 --model_type joint_bert \
+                 --model_dir ./snips_model/joint_bert \
+                 --do_train --do_eval 
 ```  
   
 ## Prediction  
   
 ```bash  
-$ python main.py --
-
-#For ATIS
-
-#For Snips
+$ python predict.py --input_file {Input_file} --output_file {Output_file} --model_dir {Model_dir} --model_type {Model_type}
 ```  
+## Default hyperparams setting  
+- BERT: Lr=1e-4 warm_steps=248 max_norm=1 train_epochs=10 dropout=0.1
+- Seq2Seq+Attention: lr=1e-3 train_epochs=10 dropout=0.1
+## Results  
   
-## Results
-
 - Run 5 ~ 10 epochs (Record the best result)
 - Only test with `uncased` model
 - Warm up steps 248 is the best
+- Seq2Seq model's teach forcing ratio is 0.5 
 
 |           |                  | Intent acc (%) | Slot F1 (%) | Sentence acc (%) |
 | --------- | ---------------- | -------------- | ----------- | ---------------- |
-| **Snips** | BERT             | **99.14**      | 96.90       | 93.00            |
-|           | BERT + CRF       | 98.57          | **97.24**   | **93.57**        |
-|           | DistilBERT       | 98.00          | 96.10       | 91.00            |
-|           | DistilBERT + CRF | 98.57          | 96.46       | 91.85            |
-|           | ALBERT           | 98.43          | 97.16       | 93.29            |
-|           | ALBERT + CRF     | 99.00          | 96.55       | 92.57            |
-| **ATIS**  | BERT             | 97.87          | 95.59       | 88.24            |
-|           | BERT + CRF       | **97.98**      | 95.93       | 88.58            |
-|           | DistilBERT       | 97.76          | 95.50       | 87.68            |
-|           | DistilBERT + CRF | 97.65          | 95.89       | 88.24            |
-|           | ALBERT           | 97.64          | 95.78       | 88.13            |
-|           | ALBERT + CRF     | 97.42          | **96.32**   | **88.69**        |
+| **Snips** | BERT             | **99.14**       | 96.11       | 99.0            |
+|           | BERT + CRF       | 98.85          | **95.81**   | **98.71**        |
+|           | Seq2Seq+Attention| 98.14          | 95.07       | 97.57            |
+| **ATIS**  | BERT             | 97.4           | 98.07       | 97.40            |
+|           | BERT + CRF       | **97.8**       | 98.07       | 97.80            |
+|           | Seq2Seq+Attention| 98.2           | 96.8        | 98.20            |
+
 
 ## Sentence predict Result  
 ![](./images/result.png)  

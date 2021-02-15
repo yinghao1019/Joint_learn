@@ -61,35 +61,35 @@ if __name__ == '__main__':
     parser.add_argument('--random_seed', type=int,
                         default=1234, help='set random seed')
     parser.add_argument('--max_seqLen', type=int, default=50,
-                        help='Set max sequence len After tokenize text')
+                        help='Set max sequence len After tokenize text.Default is 50')
 
     parser.add_argument('--num_train_epochs', type=int, default=10,
-                        help='If>0:set number of train model epochs.')
+                        help='If>0:set number of train model epochs.Default is 10')
     parser.add_argument('--max_steps', type=int, default=0,
-                        help='If >0:set total_number of train step.Override num_train_epochs')
+                        help='If >0:set total_number of train step.Override num_train_epochsDefault is 0')
     parser.add_argument('--warm_steps', type=int,
-                        default=0, help='Linear Warm up steps')
+                        default=0, help='Linear Warm up steps.Default is 0')
     parser.add_argument('--grad_accumulate_steps', type=int,
-                        default=1, help='Number of update gradient to accumulate before update model ')
+                        default=1, help='Number of update gradient to accumulate before update model.Default is 1.')
     parser.add_argument('--logging_steps', type=int, default=200,
-                        help='Every X train step to logging model info')
+                        help='Every X train step to logging model info.Default is 200.')
     parser.add_argument('--save_steps', type=int, default=200,
-                        help='Every X train step to save Model')
+                        help='Every X train step to save Model.Default is 200.')
 
     parser.add_argument('--bs', type=int, default=64,
-                        help='Train model Batch size')
+                        help='Train model Batch size.Default is 64.')
     parser.add_argument('--train_lr', type=float, default=5e-5,
-                        help='Learning rate for AdamW')
+                        help='Learning rate for AdamW.Default is 5e-5')
     parser.add_argument('--weight_decay', type=float,
-                        default=0.0, help='L2 weight regularization for AdamW')
+                        default=0.0, help='L2 weight regularization for AdamW.Default is 0')
     parser.add_argument('--adam_epsilon', type=float,
                         default=1e-8, help='Epsilon for Adam optimizer.')
     parser.add_argument('--max_norm', type=float,
-                        default=1.0, help='Max norm to avoid gradinet exploding')
+                        default=1.0, help='Max norm to avoid gradinet exploding.Default is 1')
     parser.add_argument('--dropout', type=float,
-                        default=0.1, help='Dropout rate')
+                        default=0.1, help='Dropout rate.Default is 0.1')
     parser.add_argument('--slot_loss_coef', type=float,
-                        default=1.0, help='Slot loss coefficient')
+                        default=1.0, help='Slot loss coefficient.Default is 1')
     parser.add_argument('--use_crf', action='store_true',
                         help='Whether to using CRF layer for slot pred')
 
@@ -103,7 +103,7 @@ if __name__ == '__main__':
     parser.add_argument('--slot_pad_label', type=str, default='PAD',
                         help='Pad token for slot label(Noe contribute loss)')
     parser.add_argument('--ignore_index', type=int, default=0,
-                        help='Specifies a target value that not contribute loss and gradient')
+                        help='Specifies a target value that not contribute loss and gradient.Default is 0')
     args = parser.parse_args()
     args.model_name_or_path = MODEL_PATH[args.model_type]
     if args.model_type.endswith('S2S'):
