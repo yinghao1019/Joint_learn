@@ -25,12 +25,12 @@ Architecture is referenced to [monologg/JointBERT](https://github.com/monologg/J
      1.Using neural network,last hidden state,encoder hiddens to compute  attention weight.
      2.using softmax to gain weight  
      
-    -Decoder part
-    1.To predict current slots,feed last hidden state,last predict label,aligned encoder hidden,
-    context vector.  
-    2.using last hidden state & encoder hiddens to compute current context vector  
-    3.using init decoder hidden & it's context to compute intent classification  
-    4.total_loss= intent_loss + coef \* slot_loss   
+    - Decoder part
+     1.To predict current slots,feed last hidden state,last predict label,aligned encoder hidden,
+       context vector.  
+     2.using last hidden state & encoder hiddens to compute current context vector  
+     3.using init decoder hidden & it's context to compute intent classification  
+     4.total_loss= intent_loss + coef * slot_loss   
 
 ## Dependencies  
 - python>=3.7
@@ -88,11 +88,11 @@ $ python predict.py --input_file {Input_file} --output_file {Output_file} --mode
 
 |           |                  | Intent acc (%) | Slot F1 (%) | Sentence acc (%) |
 | --------- | ---------------- | -------------- | ----------- | ---------------- |
-| **Snips** | BERT             | **99.14**       | 96.11       | 99.0            |
-|           | BERT + CRF       | 98.85          | **95.81**   | **98.71**        |
+| **Snips** | BERT             | **99.14**      | 96.11       | **99.0**         |
+|           | BERT + CRF       | 98.85          | 95.81       | 98.71            |
 |           | Seq2Seq+Attention| 98.14          | 95.07       | 97.57            |
-| **ATIS**  | BERT             | 97.4           | 98.07       | 97.40            |
-|           | BERT + CRF       | **97.8**       | 98.07       | 97.80            |
+| **ATIS**  | BERT             | 97.4           | **98.07**   | 97.40            |
+|           | BERT + CRF       | 97.8           | 98.07       | 97.80            |
 |           | Seq2Seq+Attention| 98.2           | 96.8        | 98.20            |
 
 
